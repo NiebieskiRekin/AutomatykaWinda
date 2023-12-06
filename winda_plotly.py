@@ -9,8 +9,8 @@ from plotly.subplots import make_subplots
 # import plotly.offline as pyo
 import plotly.graph_objects as go
 
-czas_symulacji = 100  # s
-krok_czasowy = 0.01  # s
+czas_symulacji = 500  # s
+krok_czasowy = 0.1  # s
 stala_mechaniczna = 10
 stala_elektryczna = 5
 g=9.81 # m/s^2
@@ -31,8 +31,8 @@ parameters = {
     "sprezystosc_liny"  : 65000  ,# N/m
 
     # PID
-    "Kp"                : 0.7,    # Współczynnik proporcjonalny
-    "Ki"                : 0.2,    # Współczynnik całkujący
+    "Kp"                : 0.5,    # Współczynnik proporcjonalny
+    "Ki"                : 0.1,    # Współczynnik całkujący
     "Kd"                : 0.1,    # Współczynnik różniczkujący
 
     # Czas symulacji
@@ -42,7 +42,8 @@ parameters = {
 }
 
 
-def generate_data(time, goal, params = parameters):
+def generate_data(time, goal, params):
+    parameters.update(params)
     czas = time
 
     integrala = 0
@@ -68,31 +69,30 @@ def generate_data(time, goal, params = parameters):
     # Pętla symulacji
     for i in range(len(czas)-1):
 
-        blad = goal[i] - x_winda[i]
+        blad = (goal[i] - x_winda[i])
         integrala += blad * krok_czasowy
         pochodna = (blad - poprzedni_blad) / krok_czasowy
         U_pid = parameters["Kp"] * blad + parameters["Ki"] * integrala + parameters["Kd"] * pochodna
-        Uz = max(30,min(30, U_pid))
+        Uz = max(-230,min(230, U_pid))
         poprzedni_blad = blad
         U[i] = Uz
 
 
-        V = 500
-        L = 2.90e-3
+        V = 10
+        L = 0.90
         Re = 0.445
-        R = 5.65
+        R = 0.565
         # L = parameters["L_cewka"]
         # Re = parameters["R_cewka"]
         # R = parameters["opor_silnik"]
-        Ka = 2.39e-2 # Nm/A stala elektromechaniczna przekladni
-        B1 = 980 # Tarcie
-        B2 = 300
+        Ka = 1 # 2.39e-2 # Nm/A stala elektromechaniczna przekladni, zmiana wartości tworzy nowy wymiar
+        B1 = 1 # Tarcie
+        B2 = 1
         # J = parameters["Bezwl_silnik"]
-        J = 0.481
-        Beta = 300
-        B = Beta * V
-        K1 = 145000 # wsp sprężystości
-        K2 = 2500 # wsp sprężystości
+        J = 1
+        B = 40
+        K1 = 1 # wsp sprężystości
+        K2 = 1 # wsp sprężystości
         # r = parameters["promien_bebna"]
         r = 0.1
         Torque = 158e-9
@@ -103,31 +103,32 @@ def generate_data(time, goal, params = parameters):
         m_ladunek = 500
         
     
-        dI_dt: float = U[i]/L - (Re+R)*I[i]/L  - (n1*Omega[i])/(Ka*L*n2)
-        I[i+1] = I[i] + dI_dt * krok_czasowy
+        dI_dt = U[i]/L - (Re+R)*I[i]/L  - (n1/n2)*(Omega[i])/(Ka*L)
+        I[i+1] = max(min(I[i] + dI_dt * krok_czasowy,400),-400)
 
-        dOmega_dt: float = Torque/J + (n2*I[i])/(n1*J*Ka) - B1*Omega[i]/J
-        Omega[i+1] = Omega[i] + dOmega_dt*krok_czasowy
+        dOmega_dt = Torque/J + (n2*I[i])/(n1*J*Ka) - B1*Omega[i]/J
+        Omega[i+1] = max(min(Omega[i] + dOmega_dt*krok_czasowy,400),-400)
         
-        dF_winda_dt: float = (K1*Omega[i]/r - K1 * v_winda[i])
-        F_winda[i+1] = F_winda[i] + dF_winda_dt*krok_czasowy
+        dF_winda_dt = (K1*Omega[i]/r - K1 * v_winda[i])
+        F_winda[i+1] = max(min(F_winda[i] + dF_winda_dt*krok_czasowy,400),-400)
         
         dF_ladunek_dt = K2*v_winda[i] - K2*v_ladunek[i]
-        F_ladunek[i+1] = F_ladunek[i] + dF_ladunek_dt*krok_czasowy
+        F_ladunek[i+1] = max(min(F_ladunek[i] + dF_ladunek_dt*krok_czasowy,400),-400)
 
-        dV_winda_dt: float = F_winda[i]/m_winda - (B*v_winda[i-1])/m_winda - F_ladunek[i]/m_winda - (B2*v_winda[i])/m_winda + (B2*v_ladunek[i])/m_winda
+        # dV_winda_dt = F_winda[i]/m_winda - (B*v_winda[i-1])/m_winda - (B2*v_winda[i])/m_winda
+        dV_winda_dt = F_winda[i]/m_winda - (B*v_winda[i-1])/m_winda - F_ladunek[i]/m_winda - (B2*v_winda[i])/m_winda + (B2*v_ladunek[i])/m_ladunek
 
-        a_winda[i+1] = dV_winda_dt
-        v_winda[i+1] = a_winda[i+1]*krok_czasowy + v_winda[i]
-        x_winda[i+1] = v_winda[i+1]*krok_czasowy + x_winda[i]       
+        a_winda[i+1] = max(min(dV_winda_dt,400),-400)
+        v_winda[i+1] = max(min(a_winda[i+1]*krok_czasowy + v_winda[i],400),-400)
+        x_winda[i+1] = max(min(v_winda[i+1]*krok_czasowy + x_winda[i],400),-400)       
 
-        dV_ladunek_dt: float = F_ladunek[i]/m_ladunek + (B2*v_winda[i])/m_ladunek - (B2*v_ladunek[i])/m_ladunek 
+        dV_ladunek_dt = F_ladunek[i]/m_ladunek + (B2*v_winda[i])/m_ladunek - (B2*v_ladunek[i])/m_ladunek 
 
-        a_ladunek[i+1] = dV_ladunek_dt
-        v_ladunek[i+1] = a_ladunek[i+1]*krok_czasowy + v_ladunek[i]
-        x_ladunek[i+1] = v_ladunek[i+1]*krok_czasowy + x_ladunek[i]       
+        a_ladunek[i+1] = max(min(dV_ladunek_dt,400),-400)
+        v_ladunek[i+1] = max(min(a_ladunek[i+1]*krok_czasowy + v_ladunek[i],400),-400)
+        x_ladunek[i+1] = max(min(v_ladunek[i+1]*krok_czasowy + x_ladunek[i],400),-400)       
 
-
+    U[len(czas)-1] = U[len(czas)-2]
 
     df = pd.DataFrame({"Czas":czas,
                        "Prąd":I, 
@@ -192,42 +193,43 @@ app.layout = html.Div([
           State('slider2', 'value'))
 def update_figure(n_clicks, input1, input2):
     df = generate_data(params={"A":input1,"B":input2}, time=czas, goal=np.ones_like(czas)*80)   
-    fig = make_subplots(rows=3, cols=2)
-    fig.update_layout(transition_duration=50)
+    fig = make_subplots(rows=3, cols=2,subplot_titles=('Napięcie',  'Prąd', 'Prędkość kątowa', 'pozycja ładunku', 'pozycja windy,', 'przyśpieszenie'))
+    fig.update_layout(transition_duration=50, autosize=False, width=2000, height=2000)
 
 
     fig.add_trace(
-        go.Scatter(x=df["Czas"], y=df["Napięcie"]),
-        row=1, col=1
+        go.Scatter(x=df["Czas"], y=df["Napięcie"], name="Napięcie"),
+        row=1, col=1,
     )
 
     fig.add_trace(
-        go.Scatter(x=df["Czas"], y=df["Prąd"]),
+        go.Scatter(x=df["Czas"], y=df["Prąd"], name="Prąd"),
         row=1, col=2
     )
 
     fig.add_trace(
-        go.Scatter(x=df["Czas"], y=df["Prędkość kątowa"]),
+        go.Scatter(x=df["Czas"], y=df["Prędkość kątowa"], name="prędkość kątowa"),
         row=2, col=1
     )
 
     fig.add_trace(
-        go.Scatter(x=df["Czas"], y=df["Pozycja ladunek"]),
+        go.Scatter(x=df["Czas"], y=df["Pozycja ladunek"], name="Pozycja ładunku"),
         row=2, col=2
     )
 
-    fig.add_trace(
-        go.Scatter(x=df["Czas"], y=df["Pozycja windy"]),
+
+    fig.add_trace(        
+        go.Scatter(x=df["Czas"], y=df["Pozycja windy"], name="Pozycja windy"),
         row=3, col=1
     )
 
     fig.add_trace(
-        go.Scatter(x=df["Czas"], y=df["Docelowe położenie"]),
+        go.Scatter(x=df["Czas"], y=df["Docelowe położenie"], name="Cel"),
         row=3, col=1
     )
     
     fig.add_trace(
-        go.Scatter(x=df["Czas"], y=df["Przyśpieszenie windy"]),
+        go.Scatter(x=df["Czas"], y=df["Przyśpieszenie windy"], name="Przyśpieszenie"),
         row=3, col=2
     )
 
