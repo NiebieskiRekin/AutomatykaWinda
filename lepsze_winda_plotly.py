@@ -13,18 +13,21 @@ import plotly.graph_objects as go
 #import numpy as np
 
 p = {
-    "L_cewka"           : 0.1  ,# H
-    "R_cewka"           : 0.1  ,# ohm
-    "Bezwl_silnik"      : 0.5  ,# kgm^2/s^2
-    "Tarcie_silnik"     : 1    ,#
-    "stala_mechaniczna" : 10,
-    "stala_elektryczna" : 5,
-    "moc_silnika"       : 600  ,# W
-    "promien_bebna"     : 0.5  ,# m
-    "masa_windy"        : 200  ,# kg
-    "masa_obciazenia"   : 150  ,# kg
-    "tarcie_winda_szyb" : 10,
-    "sprezystosc_liny"  : 1    ,# N/m
+    "L_cewka"           : 0.1  ,      # H
+    "R_cewka"           : 0.1  ,      # ohm
+    "Bezwl_silnik"      : 0.5  ,      # kgm^2/s^2
+    "Tarcie_silnik"     : 1    ,      #
+    "stala_mechaniczna" : 10   ,
+    "stala_elektryczna" : 5    ,
+    "moc_silnika"       : 600  ,      # W
+    "promien_bebna"     : 0.5  ,      # m
+    "masa_windy"        : 200  ,      # kg
+    "masa_obciazenia"   : 150  ,      # kg
+    "tarcie_winda_szyb" : 10   ,
+    "sprezystosc_liny"  : 1    ,      # N/m
+    "Kp"                : 0.7  ,      # Współczynnik proporcjonalny
+    "Ki"                : 0.2  ,      # Współczynnik całkujący
+    "Kd"                : 0.2  ,      # Współczynnik różniczkujący
 
 }
 
@@ -35,9 +38,6 @@ def generate_data(parameters={},time=[],goal=[]):
     g=9.81
 
 
-    Kp = 0.7      # Współczynnik proporcjonalny
-    Ki = 0.2    # Współczynnik całkujący
-    Kd = 0.2    # Współczynnik różniczkujący
 
     # Parametry regulatora PID
     # Kp = 0.    # Współczynnik proporcjonalny
@@ -81,7 +81,7 @@ def generate_data(parameters={},time=[],goal=[]):
         blad = pozycja_zadana[i] - pozycja[i]
         integrala += blad * krok_czasowy
         pochodna = (blad - poprzedni_blad) / krok_czasowy
-        U_pid = Kp * blad + Ki * integrala + Kd * pochodna
+        U_pid = p["Kp"] * blad + p["Ki"] * integrala + p["Kd"] * pochodna
         Uz = max(-230,min(230, U_pid))
         poprzedni_blad = blad
 
@@ -131,65 +131,85 @@ app = Dash(__name__, external_stylesheets=external_stylesheets)
 app.layout = html.Div([
 
     html.H1("SYMULATOR WINDY"),
-    # html.Br(),
+    html.Br(),
     
     html.H5("Masa windy"),
     dcc.Slider(100,1000,50, 
                value=p["masa_windy"],
                id='masa_windy'
     ),
-    # html.Br(),
+    html.Br(),
     
     html.H5("Masa Obciążenia"),
     dcc.Slider(50,p["masa_windy"],50,
                value=p["masa_obciazenia"],
                id='masa_obciazenia'
     ),
-    # html.Br(),
+    html.Br(),
     
     html.H5("Tarcie winda"),
     dcc.Slider(0.1,1,0.1,
                value=p["tarcie_winda_szyb"],
                id='tarcie_winda'
     ),
-    # html.Br(),
+    html.Br(),
 
     html.H5("Tarcie silnik"),
     dcc.Slider(0.1,1,0.1,
                value=p["Tarcie_silnik"],
                id='tarcie_silnik'
     ),
-    # html.Br(),
+    html.Br(),
 
     html.H5("L cewka"),
     dcc.Slider(0.01,0.5,0.05,
                value=p["L_cewka"],
                id='L_cewka'
     ),
-    # html.Br(),
+    html.Br(),
 
     html.H5("R cewka"),
     dcc.Slider(0.01,0.5,0.05,
                value=p["R_cewka"],
                id='R_cewka'
     ),
-    # html.Br(),
+    html.Br(),
 
     html.H5("bezwl silnik"),
     dcc.Slider(0.1,10,0.5,
                value=p["Bezwl_silnik"],
                id='bezwl_silnik'
     ),
-    # html.Br(),
+    html.Br(),
 
     html.H5("promien bebna"),
     dcc.Slider(0.1,10,0.5,
                value=p["promien_bebna"],
                id='promien_bebna'
     ),
-    # html.Br(),
-    # html.Br(),
-    # html.Br(),
+    html.Br(),
+
+    html.H5("K calka"),
+    dcc.Slider(0.1,1,0.1,
+               value=p["Ki"],
+               id='Ki'
+    ),
+
+    html.H5("K pochodna"),
+    dcc.Slider(0.1,1,0.1,
+               value=p["Kd"],
+               id='Kd'
+    ),
+
+    html.H5("K proporcjonalny"),
+    dcc.Slider(0.1,1,0.1,
+               value=p["Kp"],
+               id='Kp'
+    ),
+
+    html.Br(),
+    html.Br(),
+    html.Br(),
 
 
     html.Button(id='submit-button-state', n_clicks=0, children='Submit'),
@@ -208,9 +228,13 @@ app.layout = html.Div([
           State('L_cewka', 'value'),
           State('R_cewka', 'value'),
           State('bezwl_silnik', 'value'),
-          State('promien_bebna', 'value'))
-
-def update_figure(n_clicks, masa_obciazenia, masa_windy, tarcie_winda, tarcie_silnik, L_cewka, R_cewka, bezwl_silnik, promien_bebna):
+          State('promien_bebna', 'value'),
+          State('Ki', 'value'),
+          State('Kd', 'value'),
+          State('Kp', 'value'),
+)
+def update_figure(n_clicks, masa_obciazenia, masa_windy, tarcie_winda, tarcie_silnik, L_cewka, R_cewka, bezwl_silnik, promien_bebna, Ki, Kd, Kp):
+    
     df = generate_data({
         "L_cewka" : L_cewka,
         "R_cewka" : R_cewka,
@@ -218,7 +242,10 @@ def update_figure(n_clicks, masa_obciazenia, masa_windy, tarcie_winda, tarcie_si
         "tarcie_winda_szyb" : tarcie_winda,
         "Tarcie_silnik" : tarcie_silnik,
         "masa_windy" : masa_windy,
-        "masa_obciazenia" : masa_obciazenia
+        "masa_obciazenia" : masa_obciazenia,
+        "Ki" : Ki,
+        "Kd" : Kd,
+        "Kp" : Kp,
     })   
     fig = make_subplots(rows=3, cols=2,subplot_titles=('Napięcie',  'Prąd', 'Prędkość kątowa', 'Prędkość windy', 'pozycja windy,', 'przyśpieszenie'))
     fig.update_layout(transition_duration=50, autosize=False, width=2000, height=2000)
