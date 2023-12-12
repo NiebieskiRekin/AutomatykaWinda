@@ -28,7 +28,7 @@ p = {
     "Kp"                : 0.7  ,      # Współczynnik proporcjonalny
     "Ki"                : 0.2  ,      # Współczynnik całkujący
     "Kd"                : 0.2  ,      # Współczynnik różniczkujący
-
+    "zadana_wysokosc"   : 80   ,      # Wysokość docelowa na którą jedzie winda [m]
 }
 
 def generate_data(parameters={},time=[],goal=[]):
@@ -45,8 +45,6 @@ def generate_data(parameters={},time=[],goal=[]):
     # Kd = 0.3    # Współczynnik różniczkujący
 
     # Warunki początkowe
-    pozycja_poczatkowa = 0
-    predkosc_poczatkowa = 0
     integrala = 0
     poprzedni_blad = 0
 
@@ -56,13 +54,12 @@ def generate_data(parameters={},time=[],goal=[]):
     czas = np.arange(0, czas_symulacji + krok_czasowy, krok_czasowy)
 
     v_max = 5
-    wysokosc_zadana = 50
     # Wartość zadana (położenie docelowe)
     pozycja_zadana = np.ones_like(czas)
 
 
     for i in range(len(czas)):
-        pozycja_zadana[i] = 80
+        pozycja_zadana[i] = p["zadana_wysokosc"]
 
     
 
@@ -108,7 +105,7 @@ def generate_data(parameters={},time=[],goal=[]):
         # Aktualizacja wartości
         pozycja[i + 1] = pozycja[i] + predkosc_katowa[i] * p["promien_bebna"] * krok_czasowy + 0.5 * d2x_dt2 * krok_czasowy ** 2
         #pozycja[i+1] = max(min(pozycja[i+1], 100),0)
-        predkosc_winda[i+1] = (pozycja[i+1]-pozycja[i])/krok_czasowy
+        predkosc_winda[i+1] = max(min((pozycja[i+1]-pozycja[i])/krok_czasowy, v_max),-v_max)
         przyspieszenie_winda[i+1] = (predkosc_winda[i+1]-predkosc_winda[i])/krok_czasowy
 
     return pd.DataFrame({"Czas":czas,
@@ -183,9 +180,17 @@ app.layout = html.Div([
     html.Br(),
 
     html.H5("promien bebna"),
-    dcc.Slider(0.1,10,0.5,
+    dcc.Slider(0.1,1,0.1,
                value=p["promien_bebna"],
                id='promien_bebna'
+    ),
+    html.Br(),
+
+    
+    html.H5("Zadana wysokość"),
+    dcc.Slider(10,100,10,
+               value=p["zadana_wysokosc"],
+               id='zadana_wysokosc'
     ),
     html.Br(),
 
@@ -212,7 +217,7 @@ app.layout = html.Div([
     html.Br(),
 
 
-    html.Button(id='submit-button-state', n_clicks=0, children='Submit'),
+    # html.Button(id='submit-button-state', n_clicks=0, children='Submit'),
 
     dcc.Graph(id='graph')
 
@@ -220,20 +225,22 @@ app.layout = html.Div([
 
 
 @callback(Output('graph', 'figure'),
-          Input('submit-button-state', 'n_clicks'),
-          State('masa_obciazenia', 'value'),
-          State('masa_windy', 'value'),
-          State('tarcie_winda', 'value'),
-          State('tarcie_silnik', 'value'),
-          State('L_cewka', 'value'),
-          State('R_cewka', 'value'),
-          State('bezwl_silnik', 'value'),
-          State('promien_bebna', 'value'),
-          State('Ki', 'value'),
-          State('Kd', 'value'),
-          State('Kp', 'value'),
+          # Input('submit-button-state', 'n_clicks'),
+          Input('masa_obciazenia', 'value'),
+          Input('masa_windy', 'value'),
+          Input('tarcie_winda', 'value'),
+          Input('tarcie_silnik', 'value'),
+          Input('L_cewka', 'value'),
+          Input('R_cewka', 'value'),
+          Input('bezwl_silnik', 'value'),
+          Input('promien_bebna', 'value'),
+          Input('zadana_wysokosc', 'value'),
+          Input('Ki', 'value'),
+          Input('Kd', 'value'),
+          Input('Kp', 'value'),
 )
-def update_figure(n_clicks, masa_obciazenia, masa_windy, tarcie_winda, tarcie_silnik, L_cewka, R_cewka, bezwl_silnik, promien_bebna, Ki, Kd, Kp):
+# def update_figure(n_clicks, masa_obciazenia, masa_windy, tarcie_winda, tarcie_silnik, L_cewka, R_cewka, bezwl_silnik, promien_bebna,zadana_wysokosc, Ki, Kd, Kp):
+def update_figure(masa_obciazenia, masa_windy, tarcie_winda, tarcie_silnik, L_cewka, R_cewka, bezwl_silnik, promien_bebna,zadana_wysokosc, Ki, Kd, Kp):
     
     df = generate_data({
         "L_cewka" : L_cewka,
@@ -243,6 +250,7 @@ def update_figure(n_clicks, masa_obciazenia, masa_windy, tarcie_winda, tarcie_si
         "Tarcie_silnik" : tarcie_silnik,
         "masa_windy" : masa_windy,
         "masa_obciazenia" : masa_obciazenia,
+        "zadana_wysokosc" : zadana_wysokosc,
         "Ki" : Ki,
         "Kd" : Kd,
         "Kp" : Kp,
