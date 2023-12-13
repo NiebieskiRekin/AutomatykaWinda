@@ -1,5 +1,4 @@
-# Wersja test
-import numpy as np
+# Wersja test import numpy as np
 import pandas as pd
 from dash import Dash, dcc, html, Input, Output, callback, State
 # import plotly.express as px
@@ -10,8 +9,8 @@ from plotly.subplots import make_subplots
 # import plotly.offline as pyo
 import plotly.graph_objects as go
 
-#import numpy as np
-
+import numpy as np
+al = []
 p = {
     "L_cewka"           : 0.1  ,      # H
     "R_cewka"           : 0.1  ,      # ohm
@@ -20,7 +19,7 @@ p = {
     "stala_mechaniczna" : 10   ,
     "stala_elektryczna" : 5    ,
     "moc_silnika"       : 600  ,      # W
-    "promien_bebna"     : 0.5  ,      # m
+    "promien_bebna"     : 0.1  ,      # m
     "masa_windy"        : 200  ,      # kg
     "masa_obciazenia"   : 150  ,      # kg
     "tarcie_winda_szyb" : 10   ,
@@ -28,14 +27,14 @@ p = {
     "Kp"                : 0.7  ,      # Współczynnik proporcjonalny
     "Ki"                : 0.2  ,      # Współczynnik całkujący
     "Kd"                : 0.2  ,      # Współczynnik różniczkujący
-    "zadana_wysokosc"   : 80   ,      # Wysokość docelowa na którą jedzie winda [m]
+    "zadana_wysokosc"   : 10   ,      # Wysokość docelowa na którą jedzie winda [m]
 }
 
 def generate_data(parameters={},time=[],goal=[]):
     p.update(parameters)
     
 
-    g=9.81
+    G=9.81
 
 
 
@@ -53,13 +52,21 @@ def generate_data(parameters={},time=[],goal=[]):
     krok_czasowy = 0.01  # s
     czas = np.arange(0, czas_symulacji + krok_czasowy, krok_czasowy)
 
-    v_max = 5
+    v_max = 100
     # Wartość zadana (położenie docelowe)
-    pozycja_zadana = np.ones_like(czas)
+    pozycja_zadana = np.zeros_like(czas)
+    for i in range(1,len(czas)):
+        if (pozycja_zadana[i-1] < p["zadana_wysokosc"] and 0):
+            pozycja_zadana[i] = pozycja_zadana[i-1] + (v_max/100)*krok_czasowy
+        else :
+            pozycja_zadana[i] = p["zadana_wysokosc"]
 
-
-    for i in range(len(czas)):
-        pozycja_zadana[i] = p["zadana_wysokosc"]
+    g = np.zeros_like(czas)
+    for i in range(1,len(czas)):
+        if (g[i] < G):
+            g[i] = g[i-1] + 0.1*krok_czasowy
+        else :
+            g[i] = G
 
     
 
@@ -91,7 +98,7 @@ def generate_data(parameters={},time=[],goal=[]):
         prad[i + 1] = prad[i] + di_dt * krok_czasowy
 
         # Równania mechaniczne silnika
-        M_obc = p["masa_obciazenia"]* g * p["promien_bebna"]# moment obciążenia
+        M_obc = p["masa_obciazenia"]* g[i] * p["promien_bebna"]# moment obciążenia
         domega_dt = (p["stala_mechaniczna"]/ p["Bezwl_silnik"]) * prad[i] - (p["Tarcie_silnik"]/ p["Bezwl_silnik"]) * predkosc_katowa[i] - (
                 1 / p['Bezwl_silnik']) * M_obc
         predkosc_katowa[i + 1] = predkosc_katowa[i] + domega_dt * krok_czasowy
@@ -100,6 +107,8 @@ def generate_data(parameters={},time=[],goal=[]):
         d2x_dt2 = (p["tarcie_winda_szyb"] * predkosc_katowa[i]*p["promien_bebna"] +
                    p["sprezystosc_liny"] * (pozycja[i] - p["promien_bebna"] *
                    np.trapz(predkosc_katowa[:i + 1], dx=krok_czasowy)))/p["masa_windy"]
+
+        al.append(d2x_dt2)
 
 
         # Aktualizacja wartości
@@ -122,20 +131,20 @@ def generate_data(parameters={},time=[],goal=[]):
                            })
 
 
-external_stylesheets = ['https://codepen.io/chriddyp/pen/bWLwgP.css']
-app = Dash(__name__, external_stylesheets=external_stylesheets)
+# external_stylesheets = ['https://codepen.io/chriddyp/pen/bWLwgP.css']
+app = Dash(__name__)
 
 app.layout = html.Div([
 
     html.H1("SYMULATOR WINDY"),
     html.Br(),
     
-    html.H5("Masa windy"),
-    dcc.Slider(100,1000,50, 
-               value=p["masa_windy"],
-               id='masa_windy'
-    ),
-    html.Br(),
+    # html.H5("Masa windy"),
+    # dcc.Slider(100,1000,50, 
+    #            value=p["masa_windy"],
+    #            id='masa_windy'
+    # ),
+    # html.Br(),
     
     html.H5("Masa Obciążenia"),
     dcc.Slider(50,p["masa_windy"],50,
@@ -188,7 +197,7 @@ app.layout = html.Div([
 
     
     html.H5("Zadana wysokość"),
-    dcc.Slider(10,100,10,
+    dcc.Slider(-30,30,5,
                value=p["zadana_wysokosc"],
                id='zadana_wysokosc'
     ),
@@ -227,7 +236,7 @@ app.layout = html.Div([
 @callback(Output('graph', 'figure'),
           # Input('submit-button-state', 'n_clicks'),
           Input('masa_obciazenia', 'value'),
-          Input('masa_windy', 'value'),
+          # Input('masa_windy', 'value'),
           Input('tarcie_winda', 'value'),
           Input('tarcie_silnik', 'value'),
           Input('L_cewka', 'value'),
@@ -240,7 +249,7 @@ app.layout = html.Div([
           Input('Kp', 'value'),
 )
 # def update_figure(n_clicks, masa_obciazenia, masa_windy, tarcie_winda, tarcie_silnik, L_cewka, R_cewka, bezwl_silnik, promien_bebna,zadana_wysokosc, Ki, Kd, Kp):
-def update_figure(masa_obciazenia, masa_windy, tarcie_winda, tarcie_silnik, L_cewka, R_cewka, bezwl_silnik, promien_bebna,zadana_wysokosc, Ki, Kd, Kp):
+def update_figure(masa_obciazenia, tarcie_winda, tarcie_silnik, L_cewka, R_cewka, bezwl_silnik, promien_bebna,zadana_wysokosc, Ki, Kd, Kp):
     
     df = generate_data({
         "L_cewka" : L_cewka,
@@ -248,9 +257,9 @@ def update_figure(masa_obciazenia, masa_windy, tarcie_winda, tarcie_silnik, L_ce
         "Bezwl_silnik" : bezwl_silnik,
         "tarcie_winda_szyb" : tarcie_winda,
         "Tarcie_silnik" : tarcie_silnik,
-        "masa_windy" : masa_windy,
         "masa_obciazenia" : masa_obciazenia,
         "zadana_wysokosc" : zadana_wysokosc,
+        "promien_bebna" : promien_bebna,
         "Ki" : Ki,
         "Kd" : Kd,
         "Kp" : Kp,
@@ -294,7 +303,8 @@ def update_figure(masa_obciazenia, masa_windy, tarcie_winda, tarcie_silnik, L_ce
         row=3, col=2
     )
 
-
+    # with open("f","w") as f:
+    #     f.write(pd.DataFrame({"d2x_dt2":al}).to_csv(index=False))
     return fig
 
 
