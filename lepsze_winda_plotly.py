@@ -8,7 +8,13 @@ import numpy as np
 
 # external_stylesheets = ['https://codepen.io/chriddyp/pen/bWLwgP.css']
 app = Dash(__name__)
-colors = {"Napięcie":"blue", "Prąd":"red", "Prędkość kątowa":"green","Przyśpieszenie windy":"orange", "Pozycja windy":"pink"}
+colors = {
+    "Napięcie": "blue",
+    "Prąd": "red",
+    "Prędkość kątowa": "green",
+    "Przyśpieszenie windy": "orange",
+    "Pozycja windy": "pink",
+}
 
 p = {
     "L_cewka": 0.1,  # H
@@ -28,15 +34,16 @@ p = {
     "Kd": 0.02,  # Współczynnik różniczkujący
     "pietro_start": 0,  # Wysokość docelowa na którą jedzie winda [m]
     "pietro_koniec": 2,  # Wysokość docelowa na którą jedzie winda [m]
-    "Czas symulacji" : 30,
-} 
+    "Czas symulacji": 30,
+}
+
 
 @callback(
-    Output("pietro_koniec","value"),
-    Input("pietro_start","value"),
-    Input("pietro_koniec","value"),
+    Output("pietro_koniec", "value"),
+    Input("pietro_start", "value"),
+    Input("pietro_koniec", "value"),
 )
-def get_level(start,koniec):
+def get_level(start, koniec):
     if start == koniec:
         if koniec == 1:
             return 2
@@ -44,6 +51,7 @@ def get_level(start,koniec):
             return 1
     else:
         return koniec
+
 
 def generate_data(parameters={}, time=[], goal=[]):
     p.update(parameters)
@@ -205,7 +213,7 @@ def update_figure(pietro_start, pietro_koniec, Kp, Ki, Kd, czas_symulacji, tab):
             "Kp": Kp,
             "Ki": Ki,
             "Kd": Kd,
-            "Czas symulacji" : czas_symulacji,
+            "Czas symulacji": czas_symulacji,
         }
     )
 
@@ -220,18 +228,30 @@ def update_figure(pietro_start, pietro_koniec, Kp, Ki, Kd, czas_symulacji, tab):
         )
     else:
         return dcc.Graph(
-            figure=go.Figure(
-                data=px.line(
-                    x=df["Czas"],
-                    y=df[tab],
-                    title=tab,
-                    # line = dict(color=colors[tab]),
-                ).data
+            fig=(
+                px.line(
+                    df,
+                    x="Czas",
+                    y="Pozycja windy",
+                    # line=dict(color=colors[tab]),
+                )
                 + px.line(
-                    x=df["Czas"],
-                    y=df["Docelowe położenie"],
-                    # line = dict(color='black', width=4, dash='dash')
-                ).data
+                    df,
+                    x="Czas",
+                    y="Docelowe położenie",
+                    # line=dict(color="black"),
+                )
+                # data=px.line(
+                #     x=df["Czas"],
+                #     y=df[tab],
+                #     title=tab,
+                #     # line = dict(color=colors[tab]),
+                # ).data
+                # + px.line(
+                #     x=df["Czas"],
+                #     y=df["Docelowe położenie"],
+                # line = dict(color='black', width=4, dash='dash')
+                # ).data
             )
         )
 
