@@ -10,7 +10,8 @@ from plotly.subplots import make_subplots
 import plotly.graph_objects as go
 
 import numpy as np
-al = []
+global g
+g = []
 p = {
     "L_cewka"           : 0.1  ,      # H
     "R_cewka"           : 0.1  ,      # ohm
@@ -26,8 +27,8 @@ p = {
     "sprezystosc_liny"  : 1    ,      # N/m
     "Kp"                : 0.7  ,      # Współczynnik proporcjonalny
     "Ki"                : 0.2  ,      # Współczynnik całkujący
-    "Kd"                : 0.2  ,      # Współczynnik różniczkujący
-    "zadana_wysokosc"   : 10   ,      # Wysokość docelowa na którą jedzie winda [m]
+    "Kd"                : 0.02 ,      # Współczynnik różniczkujący
+    "zadana_wysokosc"   : 10  ,      # Wysokość docelowa na którą jedzie winda [m]
 }
 
 def generate_data(parameters={},time=[],goal=[]):
@@ -35,7 +36,7 @@ def generate_data(parameters={},time=[],goal=[]):
     
 
     G=9.81
-
+    # G = 0
 
 
     # Parametry regulatora PID
@@ -45,7 +46,7 @@ def generate_data(parameters={},time=[],goal=[]):
 
     # Warunki początkowe
     integrala = 0
-    poprzedni_blad = 0
+    pochodna = 0
 
     # Czas symulacji
     czas_symulacji = 100  # s
@@ -61,15 +62,14 @@ def generate_data(parameters={},time=[],goal=[]):
         else :
             pozycja_zadana[i] = p["zadana_wysokosc"]
 
-    g = np.zeros_like(czas)
-    for i in range(1,len(czas)):
-        if (g[i] < G):
-            g[i] = g[i-1] + 0.1*krok_czasowy
-        else :
-            g[i] = G
+    g = np.ones_like(czas)*G
+    # for i in range(1,len(czas)):
+    #     if (g[i-1] < G):
+    #         g[i] = g[i-1] + 1*krok_czasowy
+    #     else :
+    #         g[i] = G
 
     
-
     # Inicjalizacja tablic do przechowywania wyników
     prad = np.zeros_like(czas)
     predkosc_katowa = np.zeros_like(czas)
@@ -78,16 +78,17 @@ def generate_data(parameters={},time=[],goal=[]):
     przyspieszenie_winda = np.zeros_like(czas)
 
     U = [0]
+    poprzedni_blad = pozycja_zadana[i] - pozycja[i]
 
     # Pętla symulacji
     for i in range(len(czas) - 1):
     # Regulator PID
         blad = pozycja_zadana[i] - pozycja[i]
-        integrala += blad * krok_czasowy
-        pochodna = (blad - poprzedni_blad) / krok_czasowy
+        integrala += (blad * krok_czasowy)
+        pochodna = ((blad-poprzedni_blad) / krok_czasowy) 
         U_pid = p["Kp"] * blad + p["Ki"] * integrala + p["Kd"] * pochodna
         Uz = max(-230,min(230, U_pid))
-        poprzedni_blad = blad
+        # poprzedni_blad = blad
 
 
         U.append(Uz)
@@ -95,7 +96,7 @@ def generate_data(parameters={},time=[],goal=[]):
 
         # Równania elektryczne silnika
         di_dt = (1 / p["L_cewka"]) * (Uz - p["R_cewka"] * prad[i] - p["Bezwl_silnik"] * predkosc_katowa[i])
-        prad[i + 1] = prad[i] + di_dt * krok_czasowy
+        prad[i + 1] = prad[i] + di_dt*krok_czasowy
 
         # Równania mechaniczne silnika
         M_obc = p["masa_obciazenia"]* g[i] * p["promien_bebna"]# moment obciążenia
@@ -108,7 +109,6 @@ def generate_data(parameters={},time=[],goal=[]):
                    p["sprezystosc_liny"] * (pozycja[i] - p["promien_bebna"] *
                    np.trapz(predkosc_katowa[:i + 1], dx=krok_czasowy)))/p["masa_windy"]
 
-        al.append(d2x_dt2)
 
 
         # Aktualizacja wartości
@@ -210,7 +210,7 @@ app.layout = html.Div([
     ),
 
     html.H5("K pochodna"),
-    dcc.Slider(0.1,1,0.1,
+    dcc.Slider(0.01,0.1,0.01,
                value=p["Kd"],
                id='Kd'
     ),
@@ -303,8 +303,8 @@ def update_figure(masa_obciazenia, tarcie_winda, tarcie_silnik, L_cewka, R_cewka
         row=3, col=2
     )
 
-    # with open("f","w") as f:
-    #     f.write(pd.DataFrame({"d2x_dt2":al}).to_csv(index=False))
+    with open("f","w") as f:
+        f.write(pd.DataFrame({"g":g}).to_csv(index=False))
     return fig
 
 
