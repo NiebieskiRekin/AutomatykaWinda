@@ -179,6 +179,9 @@ app.layout = html.Div(
                 dcc.Slider(-2, 9, 1, value=0, id="pietro_start"),
                 html.H5("Piętro końcowe"),
                 dcc.Slider(-2, 9, 1, value=2, id="pietro_koniec"),
+                html.H5("Masa obciążenia [kg]"),
+                dcc.Slider(0, 200, 50, value=50, id="masa_obciazenia"),
+                html.Br(),
                 html.Br(),
                 html.H5("K proporcjonalny"),
                 dcc.Slider(0.1, 1, 0.1, value=p["Kp"], id="Kp"),
@@ -230,13 +233,14 @@ app.layout = html.Div(
     Output("graph-div", "children"),
     Input("pietro_start", "value"),
     Input("pietro_koniec", "value"),
+    Input("masa_obciazenia", "value"),
     Input("Kp", "value"),
     Input("Ki", "value"),
     Input("Kd", "value"),
     Input("Czas symulacji", "value"),
     Input("tab", "value"),
 )
-def update_figure(pietro_start, pietro_koniec, Kp, Ki, Kd, czas_symulacji, tab):
+def update_figure(pietro_start, pietro_koniec, masa_obciazenia, Kp, Ki, Kd, czas_symulacji, tab):
     df = generate_data(
         {
             "pietro_start": pietro_start,
@@ -245,6 +249,7 @@ def update_figure(pietro_start, pietro_koniec, Kp, Ki, Kd, czas_symulacji, tab):
             "Ki": Ki,
             "Kd": Kd,
             "Czas symulacji": czas_symulacji,
+            "masa_obciazenia" : masa_obciazenia        
         }
     )
 
