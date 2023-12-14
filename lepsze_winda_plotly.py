@@ -1,6 +1,6 @@
 # Wersja test import numpy as np
 import pandas as pd
-from dash import Dash, dcc, html, Input, Output, callback, State
+from dash import Dash, dcc, html, Input, Output, callback 
 import plotly.express as px
 from plotly.subplots import make_subplots
 import plotly.graph_objects as go
@@ -18,7 +18,7 @@ colors = {
 }
 
 units_labels = {
-    "Czas" : "Czas [s]",
+    "Czas": "Czas [s]",
     "Napięcie": "Napięcie [V]",
     "Prąd": "Prąd [A]",
     "Prędkość kątowa": "Prędkość kątowa [rad/s]",
@@ -212,7 +212,9 @@ app.layout = html.Div(
                         dcc.Tab(
                             label="Przyśpieszenie windy", value="Przyśpieszenie windy"
                         ),
-                        dcc.Tab(label="Przemieszczenie windy", value="Przemieszczenie windy"),
+                        dcc.Tab(
+                            label="Przemieszczenie windy", value="Przemieszczenie windy"
+                        ),
                     ],
                 ),
                 html.Div(
@@ -240,7 +242,9 @@ app.layout = html.Div(
     Input("Czas symulacji", "value"),
     Input("tab", "value"),
 )
-def update_figure(pietro_start, pietro_koniec, masa_obciazenia, Kp, Ki, Kd, czas_symulacji, tab):
+def update_figure(
+    pietro_start, pietro_koniec, masa_obciazenia, Kp, Ki, Kd, czas_symulacji, tab
+):
     df = generate_data(
         {
             "pietro_start": pietro_start,
@@ -249,7 +253,7 @@ def update_figure(pietro_start, pietro_koniec, masa_obciazenia, Kp, Ki, Kd, czas
             "Ki": Ki,
             "Kd": Kd,
             "Czas symulacji": czas_symulacji,
-            "masa_obciazenia" : masa_obciazenia        
+            "masa_obciazenia": masa_obciazenia,
         }
     )
 
@@ -261,31 +265,37 @@ def update_figure(pietro_start, pietro_koniec, masa_obciazenia, Kp, Ki, Kd, czas
                     x="Czas",
                     y=tab,
                     color_discrete_sequence=[colors[tab]],
-                    labels = units_labels,
+                    labels=units_labels,
                 )
             )
         )
     else:
-        fig = go.Figure(
-                px.line(
-                    df,
-                    x="Czas",
-                    y="Przemieszczenie windy",
-                    color_discrete_sequence=[colors["Przemieszczenie windy"]],
-                    labels = units_labels,
-                ).data
-                + px.line(
-                    df,
-                    x="Czas",
-                    y="Docelowe położenie",
-                    color_discrete_sequence=[colors["Docelowe położenie"]],
-                    labels = units_labels,
-                ).data)
+        fig = make_subplots()
+        fig.add_trace(
+            go.Scatter(
+                x=df["Czas"],
+                y=df["Przemieszczenie windy"],
+                mode="lines",
+                name="Przemieszczenie windy",
+                line=dict(color=colors["Przemieszczenie windy"]),
+                # color_discrete_sequence=[colors["Przemieszczenie windy"]],
+                # labels=units_labels,
+            )
+        )
+        fig.add_trace(
+            go.Scatter(
+                x=df["Czas"],
+                y=df["Docelowe położenie"],
+                mode="lines",
+                name="Docelowe przemieszczenie",
+                line=dict(color=colors["Docelowe położenie"]),
+                # color_discrete_sequence=[colors["Docelowe położenie"]],
+                # labels=units_labels,
+            )
+        )
         fig.update_xaxes(title_text="Czas [s]")
         fig.update_yaxes(title_text="Przemieszczenie [m]")
-        return dcc.Graph(
-            figure = fig
-        )
+        return dcc.Graph(figure=fig)
 
 
 if __name__ == "__main__":
