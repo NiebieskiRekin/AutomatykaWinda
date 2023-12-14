@@ -13,7 +13,8 @@ colors = {
     "Prąd": "red",
     "Prędkość kątowa": "green",
     "Przyśpieszenie windy": "orange",
-    "Pozycja windy": "pink",
+    "Pozycja windy": "black",
+    "Docelowe położenie": "lightgray",
 }
 
 p = {
@@ -159,39 +160,59 @@ def generate_data(parameters={}, time=[], goal=[]):
 
 
 app.layout = html.Div(
-    [
-        html.H1("SYMULATOR WINDY"),
-        html.Br(),
-        html.H5("Piętro startowe"),
-        dcc.Slider(-2, 9, 1, value=0, id="pietro_start"),
-        html.H5("Piętro końcowe"),
-        dcc.Slider(-2, 9, 1, value=2, id="pietro_koniec"),
-        html.Br(),
-        html.H5("K proporcjonalny"),
-        dcc.Slider(0.1, 1, 0.1, value=p["Kp"], id="Kp"),
-        html.H5("K calka"),
-        dcc.Slider(0.1, 1, 0.1, value=p["Ki"], id="Ki"),
-        html.H5("K pochodna"),
-        dcc.Slider(0.01, 0.1, 0.01, value=p["Kd"], id="Kd"),
-        html.Br(),
-        html.H5("Czas symulacji [s]"),
-        dcc.Slider(10, 60, 5, value=p["Czas symulacji"], id="Czas symulacji"),
-        html.Br(),
-        html.Br(),
-        html.Br(),
-        dcc.Tabs(
-            id="tab",
-            value="Napięcie",
+    children=[
+        html.Div(
             children=[
-                dcc.Tab(label="Napięcie", value="Napięcie"),
-                dcc.Tab(label="Prąd", value="Prąd"),
-                dcc.Tab(label="Prędkość kątowa", value="Prędkość kątowa"),
-                dcc.Tab(label="Przyśpieszenie windy", value="Przyśpieszenie windy"),
-                dcc.Tab(label="Pozycja windy", value="Pozycja windy"),
+                html.H1("SYMULATOR WINDY"),
+                html.Br(),
+                html.H5("Piętro startowe"),
+                dcc.Slider(-2, 9, 1, value=0, id="pietro_start"),
+                html.H5("Piętro końcowe"),
+                dcc.Slider(-2, 9, 1, value=2, id="pietro_koniec"),
+                html.Br(),
+                html.H5("K proporcjonalny"),
+                dcc.Slider(0.1, 1, 0.1, value=p["Kp"], id="Kp"),
+                html.H5("K calka"),
+                dcc.Slider(0.1, 1, 0.1, value=p["Ki"], id="Ki"),
+                html.H5("K pochodna"),
+                dcc.Slider(0.01, 0.1, 0.01, value=p["Kd"], id="Kd"),
+                html.Br(),
+                html.H5("Czas symulacji [s]"),
+                dcc.Slider(10, 60, 5, value=p["Czas symulacji"], id="Czas symulacji"),
+                html.Br(),
+                html.Br(),
+                html.Br(),
             ],
+            id="controls",
+            className="controls",
+            style={"padding": 10, "flex": 1},
         ),
-        html.Div(id="graph-div"),
-    ]
+        html.Div(
+            [
+                dcc.Tabs(
+                    id="tab",
+                    value="Napięcie",
+                    children=[
+                        dcc.Tab(label="Napięcie", value="Napięcie"),
+                        dcc.Tab(label="Prąd", value="Prąd"),
+                        dcc.Tab(label="Prędkość kątowa", value="Prędkość kątowa"),
+                        dcc.Tab(
+                            label="Przyśpieszenie windy", value="Przyśpieszenie windy"
+                        ),
+                        dcc.Tab(label="Pozycja windy", value="Pozycja windy"),
+                    ],
+                ),
+                html.Div(
+                    id="graph-div",
+                    className="graph-div",
+                ),
+            ],
+            style={"padding": 10, "flex": 2},
+        ),
+    ],
+    id="layout",
+    className="layout",
+    style={"display": "flex", "flexDirection": "row"},
 )
 
 
@@ -219,28 +240,31 @@ def update_figure(pietro_start, pietro_koniec, Kp, Ki, Kd, czas_symulacji, tab):
 
     if tab != "Pozycja windy":
         return dcc.Graph(
-            figure=px.line(
-                x=df["Czas"],
-                y=df[tab],
-                title=tab,
-                # color=colors[tab],
+            figure=go.Figure(
+                px.line(
+                    df,
+                    x="Czas",
+                    y=tab,
+                    title=tab,
+                    color_discrete_sequence=[colors[tab]],
+                ).data
             )
         )
     else:
         return dcc.Graph(
-            fig=(
+            figure=go.Figure(
                 px.line(
                     df,
                     x="Czas",
                     y="Pozycja windy",
-                    # line=dict(color=colors[tab]),
-                )
+                    color_discrete_sequence=[colors["Pozycja windy"]],
+                ).data
                 + px.line(
                     df,
                     x="Czas",
                     y="Docelowe położenie",
-                    # line=dict(color="black"),
-                )
+                    color_discrete_sequence=[colors["Docelowe położenie"]],
+                ).data
                 # data=px.line(
                 #     x=df["Czas"],
                 #     y=df[tab],
