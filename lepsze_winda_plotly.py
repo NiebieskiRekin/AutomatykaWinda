@@ -13,8 +13,18 @@ colors = {
     "Prąd": "red",
     "Prędkość kątowa": "green",
     "Przyśpieszenie windy": "orange",
-    "Pozycja windy": "black",
+    "Przemieszczenie windy": "black",
     "Docelowe położenie": "lightgray",
+}
+
+units_labels = {
+    "Czas" : "Czas [s]",
+    "Napięcie": "Napięcie [V]",
+    "Prąd": "Prąd [A]",
+    "Prędkość kątowa": "Prędkość kątowa [rad/s]",
+    "Przyśpieszenie windy": "Przyśpieszenie windy [m/s^2]",
+    "Przemieszczenie windy": "Przemieszczenie windy [m]",
+    "Docelowe położenie": "Docelowe przemieszczenie [m]",
 }
 
 p = {
@@ -31,7 +41,7 @@ p = {
     "tarcie_winda_szyb": 8,
     "sprezystosc_liny": 1,  # N/m
     "Kp": 0.7,  # Współczynnik proporcjonalny
-    "Ki": 0.2,  # Współczynnik całkujący
+    "Ki": 0.6,  # Współczynnik całkujący
     "Kd": 0.02,  # Współczynnik różniczkujący
     "pietro_start": 0,  # Wysokość docelowa na którą jedzie winda [m]
     "pietro_koniec": 2,  # Wysokość docelowa na którą jedzie winda [m]
@@ -151,7 +161,7 @@ def generate_data(parameters={}, time=[], goal=[]):
             "Prąd": prad,
             "Napięcie": U,
             "Prędkość kątowa": predkosc_katowa,
-            "Pozycja windy": pozycja,
+            "Przemieszczenie windy": pozycja,
             "Prędkość windy": predkosc_winda,
             "Przyśpieszenie windy": przyspieszenie_winda,
             "Docelowe położenie": pozycja_zadana,
@@ -199,7 +209,7 @@ app.layout = html.Div(
                         dcc.Tab(
                             label="Przyśpieszenie windy", value="Przyśpieszenie windy"
                         ),
-                        dcc.Tab(label="Pozycja windy", value="Pozycja windy"),
+                        dcc.Tab(label="Przemieszczenie windy", value="Przemieszczenie windy"),
                     ],
                 ),
                 html.Div(
@@ -238,45 +248,38 @@ def update_figure(pietro_start, pietro_koniec, Kp, Ki, Kd, czas_symulacji, tab):
         }
     )
 
-    if tab != "Pozycja windy":
+    if tab != "Przemieszczenie windy":
         return dcc.Graph(
-            figure=go.Figure(
+            figure=(
                 px.line(
                     df,
                     x="Czas",
                     y=tab,
-                    title=tab,
                     color_discrete_sequence=[colors[tab]],
-                ).data
+                    labels = units_labels,
+                )
             )
         )
     else:
-        return dcc.Graph(
-            figure=go.Figure(
+        fig = go.Figure(
                 px.line(
                     df,
                     x="Czas",
-                    y="Pozycja windy",
-                    color_discrete_sequence=[colors["Pozycja windy"]],
+                    y="Przemieszczenie windy",
+                    color_discrete_sequence=[colors["Przemieszczenie windy"]],
+                    labels = units_labels,
                 ).data
                 + px.line(
                     df,
                     x="Czas",
                     y="Docelowe położenie",
                     color_discrete_sequence=[colors["Docelowe położenie"]],
-                ).data
-                # data=px.line(
-                #     x=df["Czas"],
-                #     y=df[tab],
-                #     title=tab,
-                #     # line = dict(color=colors[tab]),
-                # ).data
-                # + px.line(
-                #     x=df["Czas"],
-                #     y=df["Docelowe położenie"],
-                # line = dict(color='black', width=4, dash='dash')
-                # ).data
-            )
+                    labels = units_labels,
+                ).data)
+        fig.update_xaxes(title_text="Czas [s]")
+        fig.update_yaxes(title_text="Przemieszczenie [m]")
+        return dcc.Graph(
+            figure = fig
         )
 
 
