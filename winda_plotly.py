@@ -1,243 +1,285 @@
-import numpy as np
+# Wersja test import numpy as np
 import pandas as pd
-from dash import Dash, dcc, html, Input, Output, callback, State
+from dash import Dash, dcc, html, Input, Output, callback
 import plotly.express as px
 from plotly.subplots import make_subplots
-# import json
-# import copy
-# from plotly import __version__
-# import plotly.offline as pyo
 import plotly.graph_objects as go
+import numpy as np
 
-czas_symulacji = 500  # s
-krok_czasowy = 0.1  # s
-stala_mechaniczna = 10
-stala_elektryczna = 5
-g=9.81 # m/s^2
+# external_stylesheets = ['https://codepen.io/chriddyp/pen/bWLwgP.css']
+app = Dash(__name__)
+colors = {
+    "Napięcie": "blue",
+    "Prąd": "red",
+    "Prędkość kątowa": "green",
+    "Przyśpieszenie windy": "orange",
+    "Przemieszczenie windy": "black",
+    "Docelowe położenie": "lightgray",
+}
 
-parameters = {
-    # Układ
-    "L_cewka"           : 0.1  ,  # H
-    "R_cewka"           : 0.3  ,  # ohm
-    "Bezwl_silnik"      : 0.3  ,  # kgm^2/s^2
-    "Tarcie_silnik"     : 1  ,    #
-    "moc_silnika"       : 600  ,  # W
-    "opor_silnik"       : 5,      # ohm
-    "promien_bebna"     : 0.3  ,  # m
-    "masa_windy"        : 400  ,  # kg
-    "masa_obciazenia"   : 150  ,  # kg
-    "masa_przeciwwagi"  : 400 ,   # kg
-    "tarcie_winda_szyb" : 8 ,     # ??
-    "sprezystosc_liny"  : 65000  ,# N/m
+units_labels = {
+    "Czas": "Czas [s]",
+    "Napięcie": "Napięcie [V]",
+    "Prąd": "Prąd [A]",
+    "Prędkość kątowa": "Prędkość kątowa [rad/s]",
+    "Przyśpieszenie windy": "Przyśpieszenie windy [m/s^2]",
+    "Przemieszczenie windy": "Przemieszczenie windy [m]",
+    "Docelowe położenie": "Docelowe przemieszczenie [m]",
+}
 
-    # PID
-    "Kp"                : 0.5,    # Współczynnik proporcjonalny
-    "Ki"                : 0.1,    # Współczynnik całkujący
-    "Kd"                : 0.1,    # Współczynnik różniczkujący
-
-    # Czas symulacji
-    "czas_symulacji"    : 100,    # s
-    "krok_czasowy"      : 0.01,   # s
-
+p = {
+    "L_cewka": 0.1,  # H
+    "R_cewka": 0.3,  # ohm
+    "bezwladnosc_silnika": 0.3,  # kgm^2/s^2
+    "tarcie_silnika": 1,  #
+    "stala_mechaniczna": 10,
+    "promien_bebna": 0.1,  # m
+    "masa_windy": 400,  # kg
+    "masa_obciazenia": 150,  # kg
+    "tarcie_winda_szyb": 8,
+    "wysokosc_pietra": 4,  # m
+    "Kp": 0.7,  # Wzmocnienie regulatora
+    "Ti": 100,  # Czas zdwojenia
+    "Td": 0.4,  # Czas wyprzedzenia
+    "Tp": 0.01,  # Czas próbkowania
+    "pietro_start": 0,  # Wysokość docelowa na którą jedzie winda [m]
+    "pietro_koniec": 2,  # Wysokość docelowa na którą jedzie winda [m]
+    "czas_symulacji": 30,
 }
 
 
-def generate_data(time, goal, params):
-    parameters.update(params)
-    czas = time
+@callback(
+    Output("pietro_koniec", "value"),
+    Input("pietro_start", "value"),
+    Input("pietro_koniec", "value"),
+)
+def get_level(start, koniec):
+    if start == koniec:
+        if koniec == 1:
+            return 2
+        else:
+            return 1
+    else:
+        return koniec
 
-    integrala = 0
-    poprzedni_blad = 0
 
+def generate_data(parameters={}, time=[], goal=[]):
+    p.update(parameters)
 
-    U = np.zeros_like(czas)
-    I = np.zeros_like(czas)
-    Omega = np.zeros_like(czas)
-    a_winda = np.zeros_like(czas)
-    F_winda = np.zeros_like(czas)
-    v_winda = np.zeros_like(czas)
-    x_winda = np.zeros_like(czas)
-    # a_przeciwwaga = np.zeros_like(czas)
-    # F_przeciwwaga = np.zeros_like(czas)
-    # v_przeciwwaga = np.zeros_like(czas)
-    # x_przeciwwaga = np.zeros_like(czas)
-    a_ladunek = np.zeros_like(czas)
-    F_ladunek = np.zeros_like(czas)
-    v_ladunek = np.zeros_like(czas)
-    x_ladunek = np.zeros_like(czas)
+    G = 9.81
+
+    # Czas symulacji
+    czas_symulacji = p["czas_symulacji"]  # s
+    Tp = p["Tp"]  # s
+    czas = np.arange(0, czas_symulacji + Tp, Tp)
+
+    v_max = 100
+
+    pozycja_zadana = (
+        np.ones_like(czas)
+        * (p["pietro_koniec"] - p["pietro_start"])
+        * p["wysokosc_pietra"]
+    )
+
+    g = np.ones_like(czas) * G
+
+    prad = np.zeros_like(czas)
+    predkosc_katowa = np.zeros_like(czas)
+    pozycja = np.zeros_like(czas)
+    predkosc_winda = np.zeros_like(czas)
+    przyspieszenie_winda = np.zeros_like(czas)
+
+    U = [0]
+    suma_uchybow = 0
+    poprzedni_uchyb = pozycja_zadana[0] - pozycja[0]
 
     # Pętla symulacji
-    for i in range(len(czas)-1):
+    for i in range(len(czas) - 1):
+        # Regulator PID
+        uchyb = pozycja_zadana[i] - pozycja[i]
+        suma_uchybow += uchyb
+        U_pid = p["Kp"] * (
+            uchyb
+            + (Tp / p["Ti"]) * suma_uchybow
+            + (p["Td"] / Tp) * (uchyb - poprzedni_uchyb)
+        )
+        Uz = max(-230, min(230, U_pid))
+        poprzedni_uchyb = uchyb
 
-        blad = (goal[i] - x_winda[i])
-        integrala += blad * krok_czasowy
-        pochodna = (blad - poprzedni_blad) / krok_czasowy
-        U_pid = parameters["Kp"] * blad + parameters["Ki"] * integrala + parameters["Kd"] * pochodna
-        Uz = max(-230,min(230, U_pid))
-        poprzedni_blad = blad
-        U[i] = Uz
+        U.append(Uz)
 
+        # Równania elektryczne silnika
+        deltaI_Tp = (1 / p["L_cewka"]) * (
+            Uz
+            - p["R_cewka"] * prad[i]
+            - p["bezwladnosc_silnika"] * predkosc_katowa[i]
+        )
+        prad[i + 1] = prad[i] + deltaI_Tp * Tp
 
-        V = 10
-        L = 0.90
-        Re = 0.445
-        R = 0.565
-        # L = parameters["L_cewka"]
-        # Re = parameters["R_cewka"]
-        # R = parameters["opor_silnik"]
-        Ka = 1 # 2.39e-2 # Nm/A stala elektromechaniczna przekladni, zmiana wartości tworzy nowy wymiar
-        B1 = 1 # Tarcie
-        B2 = 1
-        # J = parameters["Bezwl_silnik"]
-        J = 1
-        B = 40
-        K1 = 1 # wsp sprężystości
-        K2 = 1 # wsp sprężystości
-        # r = parameters["promien_bebna"]
-        r = 0.1
-        Torque = 158e-9
-        n1 = 1430
-        n2 = 190
-        # mc = parameters["masa_windy"]
-        m_winda = 80
-        m_ladunek = 500
-        
-    
-        dI_dt = U[i]/L - (Re+R)*I[i]/L  - (n1/n2)*(Omega[i])/(Ka*L)
-        I[i+1] = max(min(I[i] + dI_dt * krok_czasowy,400),-400)
+        # Równania mechaniczne silnika
+        M_obc = p["masa_obciazenia"] * g[i] * p["promien_bebna"]  # moment obciążenia
+        deltaOmega_Tp = (M_obc / p["bezwladnosc_silnika"]) * (
+            + p["stala_mechaniczna"]*prad[i]
+            - predkosc_katowa[i]
+            - 1
+                    )
+        predkosc_katowa[i + 1] = predkosc_katowa[i] + deltaOmega_Tp * Tp
 
-        dOmega_dt = Torque/J + (n2*I[i])/(n1*J*Ka) - B1*Omega[i]/J
-        Omega[i+1] = max(min(Omega[i] + dOmega_dt*krok_czasowy,400),-400)
-        
-        dF_winda_dt = (K1*Omega[i]/r - K1 * v_winda[i])
-        F_winda[i+1] = max(min(F_winda[i] + dF_winda_dt*krok_czasowy,400),-400)
-        
-        dF_ladunek_dt = K2*v_winda[i] - K2*v_ladunek[i]
-        F_ladunek[i+1] = max(min(F_ladunek[i] + dF_ladunek_dt*krok_czasowy,400),-400)
+        # Równania windy
+        pozycja[i + 1] = (
+            p["tarcie_winda_szyb"] * predkosc_katowa[i] * p["promien_bebna"]
+            + pozycja[i]
+            - predkosc_katowa[i] * p["promien_bebna"] * Tp
+        ) * Tp*Tp + 2*pozycja[i] - pozycja[i-1]
 
-        # dV_winda_dt = F_winda[i]/m_winda - (B*v_winda[i-1])/m_winda - (B2*v_winda[i])/m_winda
-        dV_winda_dt = F_winda[i]/m_winda - (B*v_winda[i-1])/m_winda - F_ladunek[i]/m_winda - (B2*v_winda[i])/m_winda + (B2*v_ladunek[i])/m_ladunek
+        # Aktualizacja wartości
+        predkosc_winda[i + 1] = max(
+            min((pozycja[i + 1] - pozycja[i]) / Tp, v_max), -v_max
+        )
+        przyspieszenie_winda[i + 1] = (predkosc_winda[i + 1] - predkosc_winda[i]) / Tp
 
-        a_winda[i+1] = max(min(dV_winda_dt,400),-400)
-        v_winda[i+1] = max(min(a_winda[i+1]*krok_czasowy + v_winda[i],400),-400)
-        x_winda[i+1] = max(min(v_winda[i+1]*krok_czasowy + x_winda[i],400),-400)       
-
-        dV_ladunek_dt = F_ladunek[i]/m_ladunek + (B2*v_winda[i])/m_ladunek - (B2*v_ladunek[i])/m_ladunek 
-
-        a_ladunek[i+1] = max(min(dV_ladunek_dt,400),-400)
-        v_ladunek[i+1] = max(min(a_ladunek[i+1]*krok_czasowy + v_ladunek[i],400),-400)
-        x_ladunek[i+1] = max(min(v_ladunek[i+1]*krok_czasowy + x_ladunek[i],400),-400)       
-
-    U[len(czas)-1] = U[len(czas)-2]
-
-    df = pd.DataFrame({"Czas":czas,
-                       "Prąd":I, 
-                       "Napięcie":U,
-                       "Prędkość kątowa":Omega,
-                       "Pozycja windy":x_winda,
-                       "Prędkość windy":v_winda,
-                       "Przyśpieszenie windy":a_winda,
-                       "Pozycja ladunek":x_ladunek,
-                       "Prędkość ladunek":v_ladunek,
-                       "Przyśpieszenie ladunek":a_ladunek,
-                       "Docelowe położenie":goal,
-    })
-
-    with open("dane.csv","w") as f:
-      f.write(df.to_csv(index=False))
-
-
-
-    return df
-    
-
-czas = np.arange(0,czas_symulacji+krok_czasowy,krok_czasowy)
-df = pd.DataFrame({"Czas":czas,
-                   "Prąd":np.zeros_like(czas), 
-                   "Napięcie":np.zeros_like(czas),
-                   "Prędkość katowa":np.zeros_like(czas),
-                   "Pozycja windy":np.zeros_like(czas),
-                   "Prędkość windy":np.zeros_like(czas),
-                   "Przyśpieszenie windy":np.zeros_like(czas),
-                   "Pozycja ladunek":np.zeros_like(czas),
-                   "Prędkość ladunek":np.zeros_like(czas),
-                   "Przyśpieszenie ladunek":np.zeros_like(czas),
-                   "Docelowe położenie":np.zeros_like(czas),
-                   })
-
-external_stylesheets = ['https://codepen.io/chriddyp/pen/bWLwgP.css']
-app = Dash(__name__, external_stylesheets=external_stylesheets)
-
-
-app.layout = html.Div([
-    dcc.Slider(0, 5, 1,
-               value=1,
-               id='slider1'
-    ),
-
-    dcc.Slider(0, 1, 0.1,
-               value=1,
-               id='slider2'
-    ),
-
-    html.Button(id='submit-button-state', n_clicks=0, children='Submit'),
-
-    dcc.Graph(id='graph')
-
-])
-
-
-@callback(Output('graph', 'figure'),
-          Input('submit-button-state', 'n_clicks'),
-          State('slider1', 'value'),
-          State('slider2', 'value'))
-def update_figure(n_clicks, input1, input2):
-    df = generate_data(params={"A":input1,"B":input2}, time=czas, goal=np.ones_like(czas)*80)   
-    fig = make_subplots(rows=3, cols=2,subplot_titles=('Napięcie',  'Prąd', 'Prędkość kątowa', 'pozycja ładunku', 'pozycja windy,', 'przyśpieszenie'))
-    fig.update_layout(transition_duration=50, autosize=False, width=2000, height=2000)
-
-
-    fig.add_trace(
-        go.Scatter(x=df["Czas"], y=df["Napięcie"], name="Napięcie"),
-        row=1, col=1,
-    )
-
-    fig.add_trace(
-        go.Scatter(x=df["Czas"], y=df["Prąd"], name="Prąd"),
-        row=1, col=2
-    )
-
-    fig.add_trace(
-        go.Scatter(x=df["Czas"], y=df["Prędkość kątowa"], name="prędkość kątowa"),
-        row=2, col=1
-    )
-
-    fig.add_trace(
-        go.Scatter(x=df["Czas"], y=df["Pozycja ladunek"], name="Pozycja ładunku"),
-        row=2, col=2
+    return pd.DataFrame(
+        {
+            "Czas": czas,
+            "Prąd": prad,
+            "Napięcie": U,
+            "Prędkość kątowa": predkosc_katowa,
+            "Przemieszczenie windy": pozycja,
+            "Prędkość windy": predkosc_winda,
+            "Przyśpieszenie windy": przyspieszenie_winda,
+            "Docelowe położenie": pozycja_zadana,
+        }
     )
 
 
-    fig.add_trace(        
-        go.Scatter(x=df["Czas"], y=df["Pozycja windy"], name="Pozycja windy"),
-        row=3, col=1
+app.layout = html.Div(
+    children=[
+        html.Div(
+            children=[
+                html.H1("SYMULATOR WINDY"),
+                html.Br(),
+                html.H5("Piętro startowe"),
+                dcc.Slider(-2, 9, 1, value=0, id="pietro_start"),
+                html.H5("Piętro końcowe"),
+                dcc.Slider(-2, 9, 1, value=2, id="pietro_koniec"),
+                html.H5("Masa obciążenia [kg]"),
+                dcc.Slider(0, 200, 50, value=50, id="masa_obciazenia"),
+                html.Br(),
+                html.Br(),
+                html.H5("K proporcjonalny"),
+                dcc.Slider(0, 1, 0.1, value=p["Kp"], id="Kp"),
+                html.H5("K calka"),
+                dcc.Slider(0, 1, 0.1, value=p["Ti"], id="Ti"),
+                html.H5("K pochodna"),
+                dcc.Slider(0, 0.1, 0.01, value=p["Td"], id="Td"),
+                html.Br(),
+                html.H5("czas_symulacji [s]"),
+                dcc.Slider(10, 60, 5, value=p["czas_symulacji"], id="czas_symulacji"),
+                html.Br(),
+                html.Br(),
+                html.Br(),
+            ],
+            id="controls",
+            className="controls",
+            style={"padding": 10, "flex": 1},
+        ),
+        html.Div(
+            [
+                dcc.Tabs(
+                    id="tab",
+                    value="Napięcie",
+                    children=[
+                        dcc.Tab(label="Napięcie", value="Napięcie"),
+                        dcc.Tab(label="Prąd", value="Prąd"),
+                        dcc.Tab(label="Prędkość kątowa", value="Prędkość kątowa"),
+                        dcc.Tab(
+                            label="Przyśpieszenie windy", value="Przyśpieszenie windy"
+                        ),
+                        dcc.Tab(
+                            label="Przemieszczenie windy", value="Przemieszczenie windy"
+                        ),
+                    ],
+                ),
+                html.Div(
+                    id="graph-div",
+                    className="graph-div",
+                ),
+            ],
+            style={"padding": 10, "flex": 2},
+        ),
+    ],
+    id="layout",
+    className="layout",
+    style={"display": "flex", "flexDirection": "row"},
+)
+
+
+@callback(
+    Output("graph-div", "children"),
+    Input("pietro_start", "value"),
+    Input("pietro_koniec", "value"),
+    Input("masa_obciazenia", "value"),
+    Input("Kp", "value"),
+    Input("Ti", "value"),
+    Input("Td", "value"),
+    Input("czas_symulacji", "value"),
+    Input("tab", "value"),
+)
+def update_figure(
+    pietro_start, pietro_koniec, masa_obciazenia, Kp, Ti, Td, czas_symulacji, tab
+):
+    df = generate_data(
+        {
+            "pietro_start": pietro_start,
+            "pietro_koniec": pietro_koniec,
+            "Kp": Kp,
+            "Ti": Ti,
+            "Td": Td,
+            "czas_symulacji": czas_symulacji,
+            "masa_obciazenia": masa_obciazenia,
+        }
     )
 
-    fig.add_trace(
-        go.Scatter(x=df["Czas"], y=df["Docelowe położenie"], name="Cel"),
-        row=3, col=1
-    )
-    
-    fig.add_trace(
-        go.Scatter(x=df["Czas"], y=df["Przyśpieszenie windy"], name="Przyśpieszenie"),
-        row=3, col=2
-    )
+    if tab != "Przemieszczenie windy":
+        return dcc.Graph(
+            figure=(
+                px.line(
+                    df,
+                    x="Czas",
+                    y=tab,
+                    color_discrete_sequence=[colors[tab]],
+                    labels=units_labels,
+                )
+            )
+        )
+    else:
+        fig = make_subplots()
+        fig.add_trace(
+            go.Scatter(
+                x=df["Czas"],
+                y=df["Przemieszczenie windy"],
+                mode="lines",
+                name="Przemieszczenie windy",
+                line=dict(color=colors["Przemieszczenie windy"]),
+                # color_discrete_sequence=[colors["Przemieszczenie windy"]],
+                # labels=units_labels,
+            )
+        )
+        fig.add_trace(
+            go.Scatter(
+                x=df["Czas"],
+                y=df["Docelowe położenie"],
+                mode="lines",
+                name="Docelowe przemieszczenie",
+                line=dict(color=colors["Docelowe położenie"]),
+                # color_discrete_sequence=[colors["Docelowe położenie"]],
+                # labels=units_labels,
+            )
+        )
+        fig.update_xaxes(title_text="Czas [s]")
+        fig.update_yaxes(title_text="Przemieszczenie [m]")
+        return dcc.Graph(figure=fig)
 
 
-    return fig
-
-
-if __name__ == '__main__':
+if __name__ == "__main__":
     app.run(debug=True)
-
-   
