@@ -35,16 +35,14 @@ p = {
     "L_cewka": 0.05,  # H
     "R_cewka": 3,  # ohm
     "bezwladnosc_silnika": 0.3, # kgm^2/s^2
-    # "tarcie_silnika": 1,  #
     "stala_mechaniczna": 5,
     "promien_bebna": 0.1,  # m
     "masa_windy": 400,  # kg
     "masa_obciazenia": 100,  # kg
-    "Ka" : 1,
-    "tarcie_winda_szyb": 15,
+    "tarcie_winda_szyb": 10,
     "wysokosc_pietra": 4,  # m
     "Kp": 200,  # Wzmocnienie regulatora
-    "Ti": 600,  # Czas zdwojenia
+    "Ti": 6,  # Czas zdwojenia
     "Td": 3,  # Czas wyprzedzenia
     "Tp": 0.01,  # Czas próbkowania
     "pietro_start": 0,  # Wysokość docelowa na którą jedzie winda [m]
@@ -88,13 +86,22 @@ def generate_data(parameters={}, time=[], goal=[]):
     Tp = p["Tp"]  # s
     czas = np.arange(0, czas_symulacji + Tp, Tp)
 
-    v_max = 2
-
     pozycja_zadana = (
         np.ones_like(czas)
         * (p["pietro_koniec"] - p["pietro_start"])
         * p["wysokosc_pietra"]
     )
+
+    v_max = 2
+    
+    pozycja_zadana[0] = 0
+    for i in range(1,len(pozycja_zadana)):
+        if(p["pietro_koniec"]-p["pietro_start"]>0):
+            if(pozycja_zadana[i-1]<(p["pietro_koniec"] - p["pietro_start"])* p["wysokosc_pietra"]):
+                pozycja_zadana[i]=pozycja_zadana[i-1]+v_max*Tp
+        if (p["pietro_koniec"] - p["pietro_start"]<0):
+            if (pozycja_zadana[i - 1] > (p["pietro_koniec"] - p["pietro_start"]) * p["wysokosc_pietra"]):
+                pozycja_zadana[i] = pozycja_zadana[i - 1] - v_max * Tp
 
     g = np.ones_like(czas) * G
 
@@ -106,7 +113,7 @@ def generate_data(parameters={}, time=[], goal=[]):
 
     U = [0]
     suma_uchybow = 0
-    poprzedni_uchyb = pozycja_zadana[0] - pozycja[0]
+    poprzedni_uchyb = 0 #pozycja_zadana[0] - pozycja[0]
 
     # Pętla symulacji
     for i in range(len(czas) - 1):
@@ -115,25 +122,23 @@ def generate_data(parameters={}, time=[], goal=[]):
         suma_uchybow += uchyb
         U_pid = p["Kp"] * (
             uchyb
-            + (Tp / p["Ti"]) * suma_uchybow
-            + (p["Td"] / Tp) * (uchyb - poprzedni_uchyb)
-            - predkosc_winda[i]*((v_max - predkosc_winda[i])^2 if (predkosc_winda[i]>v_max) else 0) # opcjonalne
+            + Tp*suma_uchybow/p["Ti"]
+            + (p["Td"] * (uchyb - poprzedni_uchyb)/ Tp)
         )
         Uz = max(-230, min(230, U_pid))
         poprzedni_uchyb = uchyb
-
         U.append(Uz)
 
         # Równania elektryczne silnika
         deltaI_Tp = (1 / p["L_cewka"]) * (
-            Uz - p["R_cewka"] * prad[i] - (1/(p["stala_mechaniczna"]*p["Ka"]))*predkosc_katowa[i]
+            Uz - p["R_cewka"] * prad[i] - (1/p["stala_mechaniczna"])*predkosc_katowa[i]
         )
         prad[i + 1] = prad[i] + deltaI_Tp * Tp
 
         # Równania mechaniczne silnika
-        M_obc = p["masa_obciazenia"] * g[i] * p["promien_bebna"]  # moment obciążenia
+        M_obc = (p["masa_obciazenia"]) * g[i] * p["promien_bebna"]  # moment obciążenia
         deltaOmega_Tp = (1 / p["bezwladnosc_silnika"]) * (
-            +(p["stala_mechaniczna"]/p["Ka"]) * prad[i] - predkosc_katowa[i] - M_obc
+            +p["stala_mechaniczna"] * prad[i] - predkosc_katowa[i] - M_obc
         )
         predkosc_katowa[i + 1] = predkosc_katowa[i] + deltaOmega_Tp * Tp
 
@@ -143,7 +148,7 @@ def generate_data(parameters={}, time=[], goal=[]):
                 p["tarcie_winda_szyb"] * predkosc_katowa[i] * p["promien_bebna"]
                 + pozycja[i]
                 - predkosc_katowa[i] * p["promien_bebna"] * Tp
-            )/(p["masa_windy"])
+            )/(p["masa_windy"]+p["masa_obciazenia"])
             * Tp
             * Tp
             + 2 * pozycja[i]
@@ -151,9 +156,8 @@ def generate_data(parameters={}, time=[], goal=[]):
         )
 
         # Aktualizacja wartości
-        predkosc_winda[i + 1] = max(
-            min((pozycja[i + 1] - pozycja[i]) / Tp, v_max), -v_max
-        )
+        predkosc_winda[i + 1] = (pozycja[i + 1] - pozycja[i]) / Tp
+        # predkosc_winda[i + 1] = max(min(predkosc_winda[i+1],v_max),-v_max)
         przyspieszenie_winda[i + 1] = (predkosc_winda[i + 1] - predkosc_winda[i]) / Tp
 
     return pd.DataFrame(
@@ -185,24 +189,24 @@ app.layout = html.Div(
                 dcc.Slider(-2, 9, 1, value=0, id="pietro_start"),
                 html.H5("Piętro końcowe"),
                 dcc.Slider(-2, 9, 1, value=2, id="pietro_koniec"),
-                # html.H5("Masa obciążenia [kg]"),
-                # dcc.Slider(0, 200, 50, value=50, id="masa_obciazenia"),
-                # html.Br(),
+                html.H5("Masa obciążenia [kg]"),
+                dcc.Slider(0, 200, 50, value=p["masa_obciazenia"], id="masa_obciazenia"),
+                html.Br(),
                 html.Br(),
                 html.H5("Wzmocnienie regulatora"),
                 dcc.Slider(0.5, 400, value=p["Kp"], id="Kp"),
                 html.H5("Czas zdwojenia"),
-                dcc.Slider(1, 1000, value=p["Ti"], id="Ti"),
+                dcc.Slider(1, 100, value=p["Ti"], id="Ti"),
                 html.H5("Czas wyprzedzenia"),
                 dcc.Slider(0.1, 10, value=p["Td"], id="Td"),
-                html.H5("Czas próbkowania"),
-                dcc.Slider(0.005, 0.05, value=p["Tp"], id="Tp"),
                 html.Br(),
-                html.H5("czas_symulacji [s]"),
-                dcc.Slider(10, 60, 5, value=p["czas_symulacji"], id="czas_symulacji"),
-                html.Br(),
-                html.Br(),
-                html.Br(),
+                # html.H5("Czas próbkowania [s]"),
+                # dcc.Slider(0.01, 0.03, 0.01, value=p["Tp"], id="Tp"),
+                # html.H5("Czas symulacji [s]"),
+                # dcc.Slider(10, 60, 10, value=p["czas_symulacji"], id="czas_symulacji"),
+                # html.Br(),
+                # html.Br(),
+                # html.Br(),
             ],
             id="controls",
             className="controls",
@@ -215,7 +219,7 @@ app.layout = html.Div(
                     value="Przemieszczenie windy",
                     children=[
                         dcc.Tab(label="Napięcie", value="Napięcie"),
-                        dcc.Tab(label="Prąd", value="Prąd"),
+                        # dcc.Tab(label="Prąd", value="Prąd"),
                         dcc.Tab(label="Prędkość kątowa", value="Prędkość kątowa"),
                         dcc.Tab(label="Prędkość windy", value="Prędkość windy"),
                         dcc.Tab(
@@ -244,25 +248,27 @@ app.layout = html.Div(
     Output("graph-div", "children"),
     Input("pietro_start", "value"),
     Input("pietro_koniec", "value"),
+    Input("masa_obciazenia", "value"),
     Input("Kp", "value"),
     Input("Ti", "value"),
     Input("Td", "value"),
-    Input("Tp", "value"),
-    Input("czas_symulacji", "value"),
+    # Input("Tp", "value"),
+    # Input("czas_symulacji", "value"),
     Input("tab", "value"),
 )
 def update_figure(
-    pietro_start, pietro_koniec,  Kp, Ti, Td, Tp, czas_symulacji, tab
+    pietro_start, pietro_koniec, masa_obciazenia, Kp, Ti, Td, 
+    # Tp,
+    tab
 ):
     df = generate_data(
         {
             "pietro_start": pietro_start,
             "pietro_koniec": pietro_koniec,
+            "masa_obciazenia" : masa_obciazenia,
             "Kp": Kp,
             "Ti": Ti,
             "Td": Td,
-            "Tp": Tp,
-            "czas_symulacji": czas_symulacji,
         }
     )
 
