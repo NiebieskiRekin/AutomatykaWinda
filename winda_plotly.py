@@ -5,6 +5,7 @@ import plotly.express as px
 from plotly.subplots import make_subplots
 import plotly.graph_objects as go
 import numpy as np
+import math
 
 # external_stylesheets = ['https://codepen.io/chriddyp/pen/bWLwgP.css']
 app = Dash(__name__)
@@ -15,38 +16,52 @@ colors = {
     "Przyśpieszenie windy": "orange",
     "Przemieszczenie windy": "black",
     "Docelowe położenie": "lightgray",
+    "Prędkość windy" : "pink",
 }
 
-units_labels = {
-    "Czas": "Czas [s]",
-    "Napięcie": "Napięcie [V]",
-    "Prąd": "Prąd [A]",
-    "Prędkość kątowa": "Prędkość kątowa [rad/s]",
-    "Przyśpieszenie windy": "Przyśpieszenie windy [m/s^2]",
-    "Przemieszczenie windy": "Przemieszczenie windy [m]",
-    "Docelowe położenie": "Docelowe przemieszczenie [m]",
+units = {
+    "Czas": "s",
+    "Napięcie": "V",
+    "Prąd": "A",
+    "Prędkość kątowa": "rad/s",
+    "Przyśpieszenie windy": "m/s^2",
+    "Przemieszczenie windy": "m",
+    "Docelowe położenie": "m",
+    "Prędkość windy" : "m/s",
 }
+
 
 p = {
-    "L_cewka": 0.1,  # H
-    "R_cewka": 0.3,  # ohm
-    "bezwladnosc_silnika": 0.3,  # kgm^2/s^2
-    "tarcie_silnika": 1,  #
-    "stala_mechaniczna": 10,
+    "L_cewka": 0.05,  # H
+    "R_cewka": 3,  # ohm
+    "bezwladnosc_silnika": 0.3, # kgm^2/s^2
+    # "tarcie_silnika": 1,  #
+    "stala_mechaniczna": 5,
     "promien_bebna": 0.1,  # m
     "masa_windy": 400,  # kg
-    "masa_obciazenia": 150,  # kg
-    "tarcie_winda_szyb": 8,
+    "masa_obciazenia": 100,  # kg
+    "Ka" : 1,
+    "tarcie_winda_szyb": 15,
     "wysokosc_pietra": 4,  # m
-    "Kp": 0.7,  # Wzmocnienie regulatora
-    "Ti": 100,  # Czas zdwojenia
-    "Td": 0.4,  # Czas wyprzedzenia
+    "Kp": 200,  # Wzmocnienie regulatora
+    "Ti": 600,  # Czas zdwojenia
+    "Td": 3,  # Czas wyprzedzenia
     "Tp": 0.01,  # Czas próbkowania
     "pietro_start": 0,  # Wysokość docelowa na którą jedzie winda [m]
     "pietro_koniec": 2,  # Wysokość docelowa na którą jedzie winda [m]
     "czas_symulacji": 30,
 }
 
+precyzja = {
+    "Czas": -math.ceil(math.log10(abs(p["Tp"]))),
+    "Napięcie": 2,
+    "Prąd": 2,
+    "Prędkość kątowa": 2,
+    "Przyśpieszenie windy": 2,
+    "Przemieszczenie windy": 2,
+    "Docelowe położenie": 2,
+    "Prędkość windy" : 2,
+}
 
 @callback(
     Output("pietro_koniec", "value"),
@@ -73,7 +88,7 @@ def generate_data(parameters={}, time=[], goal=[]):
     Tp = p["Tp"]  # s
     czas = np.arange(0, czas_symulacji + Tp, Tp)
 
-    v_max = 100
+    v_max = 2
 
     pozycja_zadana = (
         np.ones_like(czas)
@@ -102,6 +117,7 @@ def generate_data(parameters={}, time=[], goal=[]):
             uchyb
             + (Tp / p["Ti"]) * suma_uchybow
             + (p["Td"] / Tp) * (uchyb - poprzedni_uchyb)
+            - predkosc_winda[i]*((v_max - predkosc_winda[i])^2 if (predkosc_winda[i]>v_max) else 0) # opcjonalne
         )
         Uz = max(-230, min(230, U_pid))
         poprzedni_uchyb = uchyb
@@ -110,27 +126,29 @@ def generate_data(parameters={}, time=[], goal=[]):
 
         # Równania elektryczne silnika
         deltaI_Tp = (1 / p["L_cewka"]) * (
-            Uz
-            - p["R_cewka"] * prad[i]
-            - p["bezwladnosc_silnika"] * predkosc_katowa[i]
+            Uz - p["R_cewka"] * prad[i] - (1/(p["stala_mechaniczna"]*p["Ka"]))*predkosc_katowa[i]
         )
         prad[i + 1] = prad[i] + deltaI_Tp * Tp
 
         # Równania mechaniczne silnika
         M_obc = p["masa_obciazenia"] * g[i] * p["promien_bebna"]  # moment obciążenia
-        deltaOmega_Tp = (M_obc / p["bezwladnosc_silnika"]) * (
-            + p["stala_mechaniczna"]*prad[i]
-            - predkosc_katowa[i]
-            - 1
-                    )
+        deltaOmega_Tp = (1 / p["bezwladnosc_silnika"]) * (
+            +(p["stala_mechaniczna"]/p["Ka"]) * prad[i] - predkosc_katowa[i] - M_obc
+        )
         predkosc_katowa[i + 1] = predkosc_katowa[i] + deltaOmega_Tp * Tp
 
         # Równania windy
         pozycja[i + 1] = (
-            p["tarcie_winda_szyb"] * predkosc_katowa[i] * p["promien_bebna"]
-            + pozycja[i]
-            - predkosc_katowa[i] * p["promien_bebna"] * Tp
-        ) * Tp*Tp + 2*pozycja[i] - pozycja[i-1]
+            (
+                p["tarcie_winda_szyb"] * predkosc_katowa[i] * p["promien_bebna"]
+                + pozycja[i]
+                - predkosc_katowa[i] * p["promien_bebna"] * Tp
+            )/(p["masa_windy"])
+            * Tp
+            * Tp
+            + 2 * pozycja[i]
+            - pozycja[i - 1]
+        )
 
         # Aktualizacja wartości
         predkosc_winda[i + 1] = max(
@@ -148,8 +166,13 @@ def generate_data(parameters={}, time=[], goal=[]):
             "Prędkość windy": predkosc_winda,
             "Przyśpieszenie windy": przyspieszenie_winda,
             "Docelowe położenie": pozycja_zadana,
-        }
-    )
+        })
+
+    # Za wolne
+    # for (key,value) in precyzja.items():
+    #     for j,k in df.iterrows():
+    #         df.loc[j,key] = round(df.loc[j,key], value)
+   
 
 
 app.layout = html.Div(
@@ -162,16 +185,18 @@ app.layout = html.Div(
                 dcc.Slider(-2, 9, 1, value=0, id="pietro_start"),
                 html.H5("Piętro końcowe"),
                 dcc.Slider(-2, 9, 1, value=2, id="pietro_koniec"),
-                html.H5("Masa obciążenia [kg]"),
-                dcc.Slider(0, 200, 50, value=50, id="masa_obciazenia"),
+                # html.H5("Masa obciążenia [kg]"),
+                # dcc.Slider(0, 200, 50, value=50, id="masa_obciazenia"),
+                # html.Br(),
                 html.Br(),
-                html.Br(),
-                html.H5("K proporcjonalny"),
-                dcc.Slider(0, 1, 0.1, value=p["Kp"], id="Kp"),
-                html.H5("K calka"),
-                dcc.Slider(0, 1, 0.1, value=p["Ti"], id="Ti"),
-                html.H5("K pochodna"),
-                dcc.Slider(0, 0.1, 0.01, value=p["Td"], id="Td"),
+                html.H5("Wzmocnienie regulatora"),
+                dcc.Slider(0.5, 400, value=p["Kp"], id="Kp"),
+                html.H5("Czas zdwojenia"),
+                dcc.Slider(1, 1000, value=p["Ti"], id="Ti"),
+                html.H5("Czas wyprzedzenia"),
+                dcc.Slider(0.1, 10, value=p["Td"], id="Td"),
+                html.H5("Czas próbkowania"),
+                dcc.Slider(0.005, 0.05, value=p["Tp"], id="Tp"),
                 html.Br(),
                 html.H5("czas_symulacji [s]"),
                 dcc.Slider(10, 60, 5, value=p["czas_symulacji"], id="czas_symulacji"),
@@ -187,11 +212,12 @@ app.layout = html.Div(
             [
                 dcc.Tabs(
                     id="tab",
-                    value="Napięcie",
+                    value="Przemieszczenie windy",
                     children=[
                         dcc.Tab(label="Napięcie", value="Napięcie"),
                         dcc.Tab(label="Prąd", value="Prąd"),
                         dcc.Tab(label="Prędkość kątowa", value="Prędkość kątowa"),
+                        dcc.Tab(label="Prędkość windy", value="Prędkość windy"),
                         dcc.Tab(
                             label="Przyśpieszenie windy", value="Przyśpieszenie windy"
                         ),
@@ -218,15 +244,15 @@ app.layout = html.Div(
     Output("graph-div", "children"),
     Input("pietro_start", "value"),
     Input("pietro_koniec", "value"),
-    Input("masa_obciazenia", "value"),
     Input("Kp", "value"),
     Input("Ti", "value"),
     Input("Td", "value"),
+    Input("Tp", "value"),
     Input("czas_symulacji", "value"),
     Input("tab", "value"),
 )
 def update_figure(
-    pietro_start, pietro_koniec, masa_obciazenia, Kp, Ti, Td, czas_symulacji, tab
+    pietro_start, pietro_koniec,  Kp, Ti, Td, Tp, czas_symulacji, tab
 ):
     df = generate_data(
         {
@@ -235,23 +261,24 @@ def update_figure(
             "Kp": Kp,
             "Ti": Ti,
             "Td": Td,
+            "Tp": Tp,
             "czas_symulacji": czas_symulacji,
-            "masa_obciazenia": masa_obciazenia,
         }
     )
 
     if tab != "Przemieszczenie windy":
-        return dcc.Graph(
-            figure=(
-                px.line(
+        fig = px.line(
                     df,
                     x="Czas",
                     y=tab,
                     color_discrete_sequence=[colors[tab]],
-                    labels=units_labels,
-                )
-            )
+                    labels={unit:tab+" ["+units[tab]+']' for unit in units},
         )
+        fig.update_traces(hovertemplate="Czas: %{x:."+str(precyzja["Czas"])+"f}s<br>"+tab+": %{y:."+str(precyzja[tab])+"f}"+units[tab])
+        return dcc.Graph(
+            figure=fig,
+            )
+        
     else:
         fig = make_subplots()
         fig.add_trace(
@@ -261,8 +288,6 @@ def update_figure(
                 mode="lines",
                 name="Przemieszczenie windy",
                 line=dict(color=colors["Przemieszczenie windy"]),
-                # color_discrete_sequence=[colors["Przemieszczenie windy"]],
-                # labels=units_labels,
             )
         )
         fig.add_trace(
@@ -272,12 +297,13 @@ def update_figure(
                 mode="lines",
                 name="Docelowe przemieszczenie",
                 line=dict(color=colors["Docelowe położenie"]),
-                # color_discrete_sequence=[colors["Docelowe położenie"]],
-                # labels=units_labels,
             )
         )
         fig.update_xaxes(title_text="Czas [s]")
         fig.update_yaxes(title_text="Przemieszczenie [m]")
+        fig.update_traces(hovertemplate=
+    'Czas: %{x:.'+str(precyzja["Czas"])+'f}s'+
+    '<br>Przemieszczenie : %{y:.'+str(precyzja["Przemieszczenie windy"])+'f}m')
         return dcc.Graph(figure=fig)
 
 
