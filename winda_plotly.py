@@ -41,8 +41,8 @@ p = {
     "masa_obciazenia": 100,  # kg
     "tarcie_winda_szyb": 10,
     "wysokosc_pietra": 4,  # m
-    "Kp": 200,  # Wzmocnienie regulatora
-    "Ti": 6,  # Czas zdwojenia
+    "Kp": 100,  # Wzmocnienie regulatora
+    "Ti": 50,  # Czas zdwojenia
     "Td": 3,  # Czas wyprzedzenia
     "Tp": 0.01,  # Czas próbkowania
     "pietro_start": 0,  # Wysokość docelowa na którą jedzie winda [m]
@@ -200,8 +200,8 @@ app.layout = html.Div(
                 html.H5("Czas wyprzedzenia"),
                 dcc.Slider(0.1, 10, value=p["Td"], id="Td"),
                 html.Br(),
-                # html.H5("Czas próbkowania [s]"),
-                # dcc.Slider(0.01, 0.03, 0.01, value=p["Tp"], id="Tp"),
+                html.H5("Czas próbkowania [s]"),
+                dcc.Slider(0.01, 0.03, 0.01, value=p["Tp"], id="Tp"),
                 # html.H5("Czas symulacji [s]"),
                 # dcc.Slider(10, 60, 10, value=p["czas_symulacji"], id="czas_symulacji"),
                 # html.Br(),
@@ -252,13 +252,13 @@ app.layout = html.Div(
     Input("Kp", "value"),
     Input("Ti", "value"),
     Input("Td", "value"),
-    # Input("Tp", "value"),
+    Input("Tp", "value"),
     # Input("czas_symulacji", "value"),
     Input("tab", "value"),
 )
 def update_figure(
     pietro_start, pietro_koniec, masa_obciazenia, Kp, Ti, Td, 
-    # Tp,
+    Tp,
     tab
 ):
     df = generate_data(
@@ -269,6 +269,7 @@ def update_figure(
             "Kp": Kp,
             "Ti": Ti,
             "Td": Td,
+            "Tp" : Tp,
         }
     )
 
